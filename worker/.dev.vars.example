@@ -1,0 +1,4 @@
+# This is a TEMPLATE, never commit real credentials.
+GITHUB_CLIENT_SECRET="replace-with-secret"
+TOKEN_PEPPER="generate-a-random-value-with-at-least-32-characters"
+INTROSPECTION_KEY="another-independent-long-random-server-secret"
