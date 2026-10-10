@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https: http://127.0.0.1:*; base-uri 'none'; object-src 'none'; form-action 'none'" />
+  <title>مدار | مدیریت امن توکن‌های ادمین</title>
+  <link rel="stylesheet" href="./assets/styles.css" />
+  <script defer src="./config.js"></script>
+  <script defer src="./assets/app.js"></script>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" aria-label="ناوبری اصلی">
+    <a class="brand" href="./"><span class="brand-mark" aria-hidden="true">◈</span><span>مدار<small>ADMIN CONTROL</small></span></a>
+    <div class="workspace-label">فضای کاری</div>
+    <nav class="nav">
+      <button type="button" class="nav-btn active" data-page="overview"><span class="nav-icon">▦</span> نمای کلی</button>
+      <button type="button" class="nav-btn" data-page="tokens"><span class="nav-icon">◈</span> توکن‌های مدیریتی</button>
+      <button type="button" class="nav-btn" data-page="audit"><span class="nav-icon">◷</span> گزارش فعالیت‌ها</button>
+      <button type="button" class="nav-btn" data-page="settings"><span class="nav-icon">⚙</span> راه‌اندازی</button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="permission-note"><span class="lock">●</span><strong>دسترسی محدود</strong><p>صرفاً توکن‌های مدیریتی. هیچ عملیات یا مسیر مربوط به توکن کاربران در این پنل وجود ندارد.</p></div>
+      <p class="copyright">نسخهٔ ۱.۰ · GitHub Pages</p>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div class="breadcrumb">سامانه مدیریت <span>/</span> <strong id="breadcrumbTitle">نمای کلی</strong></div>
+      <div class="top-actions"><span id="connectionStatus" class="status-pill">● در انتظار پیکربندی</span><span id="identity" class="identity">ورود انجام نشده</span><button type="button" id="signInBtn" class="button outline">ورود با GitHub</button><button type="button" id="signOutBtn" class="button outline hidden">خروج</button></div>
+    </header>
+    <div class="page-content">
+      <div class="notice" id="notice" role="status" aria-live="polite"></div>
+      <section id="page-overview" class="page">
+        <div class="hero"><div><div class="eyebrow">سامانهٔ اختصاصی مدیریت دسترسی</div><h1>کنترل توکن‌ها،<br/><em>فقط در سطح مدیریت.</em></h1><p>ساخت، مشاهدهٔ وضعیت، تمدید، چرخش و لغو توکن‌های ادمین با ورود اختصاصی و ثبت تاریخچهٔ عملیات.</p><div class="hero-buttons"><button type="button" class="button primary" data-goto="tokens">مدیریت توکن‌ها <span>←</span></button><button type="button" class="button muted" data-goto="settings">راهنمای اتصال</button></div></div><div class="hero-art" aria-hidden="true"><div class="orb orb-a"></div><div class="orb orb-b"></div><div class="glass-card"><span>SECURE ACCESS</span><div class="key-symbol">✳</div><div class="bars"><i></i><i></i><i></i><i></i><i></i></div><small>ADMIN ONLY / VERIFIED</small></div></div></div>
+        <div class="section-heading"><h2>وضعیت سامانه</h2><span>به‌روزرسانی بعد از ورود</span></div>
+        <div class="stats"><article class="stat-card"><div class="stat-label">توکن‌های فعال <span class="stat-icon">◈</span></div><strong id="activeCount">—</strong><small>توکن مدیریتی دارای اعتبار</small></article><article class="stat-card"><div class="stat-label">توکن‌های لغوشده <span class="stat-icon">⊘</span></div><strong id="revokedCount">—</strong><small>توکن‌های غیرفعال‌شده</small></article><article class="stat-card"><div class="stat-label">توکن‌های منقضی <span class="stat-icon">◷</span></div><strong id="expiredCount">—</strong><small>پایان مهلت دسترسی</small></article></div>
+        <div class="info-grid"><article class="surface"><div class="surface-heading"><h3>معماری امن</h3><span class="tag">محافظت در سمت سرور</span></div><div class="step"><span>01</span><div><strong>احراز هویت با GitHub</strong><p>ورود فقط برای شناسه‌های GitHub که در سمت سرور مجاز شده‌اند.</p></div></div><div class="step"><span>02</span><div><strong>کلیدها خارج از GitHub Pages</strong><p>اسرار و هش توکن‌ها در Worker و پایگاه داده نگهداری می‌شوند، نه مخزن عمومی.</p></div></div><div class="step"><span>03</span><div><strong>محدودسازی API</strong><p>API این پروژه هیچ مسیری برای توکن‌های کاربران یا مشترکان ندارد.</p></div></div></article><article class="surface"><div class="surface-heading"><h3>فعالیت‌های اخیر</h3><button type="button" class="text-btn" data-goto="audit">مشاهده همه ←</button></div><div id="recentAudit" class="feed"><div class="empty-mini">پس از ورود، رویدادها نمایش داده می‌شوند.</div></div></article></div>
+      </section>
+      <section id="page-tokens" class="page hidden">
+        <div class="page-header"><div><div class="eyebrow">ADMIN TOKENS</div><h1>توکن‌های مدیریتی</h1><p>مدیریت چرخهٔ عمر توکن‌های ادمین؛ بدون هیچ ابزار مدیریت توکن کاربران.</p></div><button id="createTokenBtn" class="button primary" type="button" disabled>+ صدور توکن جدید</button></div>
+        <div class="surface table-panel"><div class="table-toolbar"><div><h3>فهرست توکن‌ها</h3><p>مقدار اصلی توکن فقط هنگام صدور یا چرخش نشان داده می‌شود.</p></div><button type="button" class="button muted" id="refreshBtn">↻ تازه‌سازی</button></div><div class="table-scroll"><table><thead><tr><th>عنوان</th><th>وضعیت</th><th>صدور</th><th>انقضا</th><th>عملیات</th></tr></thead><tbody id="tokensBody"><tr><td colspan="5" class="table-empty">برای مشاهدهٔ توکن‌ها وارد شوید.</td></tr></tbody></table></div></div>
+      </section>
+      <section id="page-audit" class="page hidden"><div class="page-header"><div><div class="eyebrow">AUDIT TRAIL</div><h1>گزارش فعالیت‌ها</h1><p>ثبت عملیات مدیریتی برای رهگیری تغییرات.</p></div><button type="button" class="button muted" id="auditRefreshBtn">↻ تازه‌سازی</button></div><div class="surface audit-panel"><div id="auditList" class="feed"><div class="empty-mini">پس از ورود، گزارش نمایش داده می‌شود.</div></div></div></section>
+      <section id="page-settings" class="page hidden"><div class="page-header"><div><div class="eyebrow">SETUP</div><h1>راهنمای راه‌اندازی</h1><p>اتصال رابط GitHub Pages به سرویس امن Cloudflare Worker.</p></div></div><div class="settings-grid"><div class="surface"><h3>اتصال پنل</h3><p class="muted-text">نشانی API از فایل عمومی <code>config.js</code> خوانده می‌شود. هیچ رمز یا کلید محرمانه‌ای در آن قرار ندهید.</p><div class="kv"><span>API URL</span><code id="apiUrlText">تنظیم نشده</code></div><div class="kv"><span>مخزن</span><a href="https://github.com/mozdbaranarshiya/extensions" target="_blank" rel="noopener noreferrer">extensions ↗</a></div><div class="kv"><span>دسترسی</span><strong>فقط شناسه‌های GitHub مجاز</strong></div></div><div class="surface"><h3>ترتیب فعال‌سازی</h3><ol class="setup-steps"><li>در Cloudflare یک پایگاه دادهٔ D1 و Worker بسازید.</li><li>در GitHub یک OAuth App بسازید؛ نشانی callback را روی <code>/auth/callback</code> در Worker بگذارید.</li><li>شناسه‌های مدیر و اسرار را در Worker تنظیم و مهاجرت D1 را اجرا کنید.</li><li>نشانی Worker را در <code>config.js</code> بگذارید و GitHub Pages را فعال کنید.</li></ol><p class="muted-text">مراحل و دستورهای کامل در README مخزن آمده‌اند.</p></div></div></section>
+    </div>
+  </main>
+</div>
+<dialog id="createDialog" class="modal"><form id="createForm" class="modal-body"><div class="modal-head"><div><small>ISSUE ADMIN TOKEN</small><h2>صدور توکن مدیریتی</h2></div><button type="button" class="icon-btn" data-close="createDialog" aria-label="بستن">×</button></div><label for="tokenLabel">عنوان توکن</label><input id="tokenLabel" name="label" required maxlength="60" placeholder="مثلاً مدیریت سرویس اصلی" autocomplete="off"/><label for="tokenDays">مدت اعتبار</label><select id="tokenDays" name="days"><option value="7">۷ روز</option><option value="30" selected>۳۰ روز</option><option value="90">۹۰ روز</option></select><div class="modal-actions"><button type="button" class="button muted" data-close="createDialog">انصراف</button><button type="submit" class="button primary">صدور توکن</button></div></form></dialog>
+<dialog id="secretDialog" class="modal"><div class="modal-body"><div class="modal-head"><div><small>ONE-TIME SECRET</small><h2>توکن جدید صادر شد</h2></div><button type="button" class="icon-btn" data-close="secretDialog" aria-label="بستن">×</button></div><p class="warning-text">این مقدار فقط یک بار نمایش داده می‌شود. آن را در محل امن ذخیره کنید. بعداً امکان بازیابی آن وجود ندارد.</p><label for="secretValue">توکن مدیریت</label><textarea id="secretValue" readonly rows="3" dir="ltr"></textarea><div class="modal-actions"><button type="button" id="copySecretBtn" class="button primary">کپی توکن</button><button type="button" class="button muted" data-close="secretDialog">بستن</button></div></div></dialog>
+<dialog id="actionDialog" class="modal"><div class="modal-body"><div class="modal-head"><div><small>CONFIRMATION</small><h2 id="actionTitle">تأیید عملیات</h2></div><button type="button" class="icon-btn" data-close="actionDialog" aria-label="بستن">×</button></div><p id="actionDescription"></p><div id="extendFields" class="hidden"><label for="extendDays">افزایش اعتبار</label><select id="extendDays"><option value="7">۷ روز</option><option value="30">۳۰ روز</option><option value="90">۹۰ روز</option></select></div><div class="modal-actions"><button type="button" class="button muted" data-close="actionDialog">انصراف</button><button type="button" id="confirmActionBtn" class="button danger">تأیید</button></div></div></dialog>
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+</body>
+</html>
