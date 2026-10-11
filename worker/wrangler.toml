@@ -1,16 +1,7 @@
-name = "extensions-admin-tokens"
+name = "extensions-admin-gateway"
 main = "src/index.js"
 compatibility_date = "2026-09-01"
 
-# Fill these PUBLIC non-secret values before deploying.
 [vars]
 FRONTEND_URL = "https://mozdbaranarshiya.github.io/extensions/"
-PUBLIC_WORKER_ORIGIN = "https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev"
-ALLOWED_GITHUB_IDS = "YOUR_NUMERIC_GITHUB_USER_ID"
-GITHUB_CLIENT_ID = "YOUR_GITHUB_OAUTH_CLIENT_ID"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "extensions_admin_tokens"
-database_id = "YOUR_D1_DATABASE_UUID"
-migrations_dir = "migrations"
+EXTENSION_VERSION = "4.6.4"
