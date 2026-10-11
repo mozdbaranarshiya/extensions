@@ -1,166 +1,221 @@
 (() => {
   'use strict';
-  const config = window.ADMIN_PANEL_CONFIG || {};
-  const apiBase = typeof config.API_BASE_URL === 'string' ? config.API_BASE_URL.trim().replace(/\/+$/, '') : '';
-  const $ = (id) => document.getElementById(id);
-  const state = { session: '', user: null, tokens: [], audit: [], busy: false, action: null };
-  const pages = { overview: 'نمای کلی', tokens: 'توکن‌های مدیریتی', audit: 'گزارش فعالیت‌ها', settings: 'راه‌اندازی' };
-  let toastTimer;
-
-  function toast(message, error = false) {
-    const el = $('toast'); el.textContent = message; el.className = `toast${error ? ' error' : ''}`;
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.add('hidden'), 4500);
+  const $ = id => document.getElementById(id);
+  const base = String(window.ADMIN_PANEL_CONFIG?.API_BASE_URL || '').trim().replace(/\/+$/, '');
+  const pages = { overview: 'نمای کلی', subscribers: 'مدیریت مشترکان', cookies: 'مدیریت کوکی‌ها', proxies: 'پروکسی‌ها', account: 'اطلاعات حساب و MFA', help: 'راهنما و محدودیت‌ها' };
+  const state = { token: '', profile: null, subscribers: [], expiryId: '', busy: false, otpTimer: null };
+  const text = x => typeof x === 'string' ? x : (x == null ? '' : String(x));
+  const safe = x => text(x).slice(0, 600);
+  const formatDate = x => {
+    if (!x) return '—';
+    const date = new Date(x);
+    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleDateString('fa-IR');
+  };
+  const isoDate = value => value ? `${value}T23:59:59.000Z` : undefined;
+  let toastId;
+  function toast(message, isError = false) {
+    const el = $('toast'); el.textContent = message; el.hidden = false; el.classList.toggle('error', isError);
+    clearTimeout(toastId); toastId = setTimeout(() => el.hidden = true, 5000);
   }
-  function notice(message) { $('notice').textContent = message; $('notice').classList.toggle('show', Boolean(message)); }
-  function goto(page) {
-    if (!Object.hasOwn(pages, page)) return;
-    for (const key of Object.keys(pages)) $('page-' + key).classList.toggle('hidden', page !== key);
-    document.querySelectorAll('.nav-btn').forEach(el => el.classList.toggle('active', el.dataset.page === page));
-    $('breadcrumbTitle').textContent = pages[page];
-  }
-  function time(iso) {
-    if (!iso) return '—';
-    const d = new Date(iso); return Number.isNaN(d.getTime()) ? '—' : new Intl.DateTimeFormat('fa-IR-u-ca-gregory', { dateStyle: 'medium', timeZone: 'UTC' }).format(d);
-  }
-  function status(t) {
-    if (t.revoked_at) return ['لغوشده', 'revoked'];
-    if (new Date(t.expires_at).getTime() <= Date.now()) return ['منقضی', 'expired'];
-    return ['فعال', 'active'];
-  }
-  function td(tr, val, cls = '') { const cell = document.createElement('td'); cell.textContent = val; if (cls) cell.className = cls; tr.appendChild(cell); return cell; }
-  function makeButton(parent, title, action, token, disabled = false, dangerous = false) {
-    const b = document.createElement('button'); b.type = 'button'; b.className = `mini-btn${dangerous ? ' danger' : ''}`;
-    b.textContent = title; b.disabled = disabled; b.addEventListener('click', () => openAction(action, token)); parent.appendChild(b);
-  }
-  function renderTokens() {
-    const tbody = $('tokensBody'); tbody.replaceChildren();
-    if (!state.user) { const tr = document.createElement('tr'); td(tr, 'برای مشاهدهٔ توکن‌ها وارد شوید.', 'table-empty').colSpan = 5; tbody.appendChild(tr); return; }
-    if (!state.tokens.length) { const tr = document.createElement('tr'); td(tr, 'هنوز توکن مدیریتی صادر نشده است.', 'table-empty').colSpan = 5; tbody.appendChild(tr); return; }
-    for (const t of state.tokens) {
-      const tr = document.createElement('tr');
-      const name = td(tr, t.label || 'بدون عنوان');
-      const id = document.createElement('small'); id.className = 'meta'; id.textContent = `ID: ${t.id.slice(0, 8)}`; name.appendChild(id);
-      const s = td(tr, ''); const pill = document.createElement('span'); const [label, key] = status(t); pill.textContent = label; pill.className = `token-state ${key}`; s.appendChild(pill);
-      td(tr, time(t.created_at)); td(tr, time(t.expires_at));
-      const actions = td(tr, ''); const buttons = document.createElement('div'); buttons.className = 'table-actions'; actions.appendChild(buttons);
-      const disabled = key !== 'active';
-      makeButton(buttons, 'تمدید', 'extend', t, key === 'revoked');
-      makeButton(buttons, 'چرخش', 'rotate', t, disabled);
-      makeButton(buttons, 'لغو', 'revoke', t, disabled, true);
-      tbody.appendChild(tr);
-    }
-  }
-  function renderAudit(target, limit) {
-    const host = $(target); host.replaceChildren();
-    if (!state.user || !state.audit.length) { const el = document.createElement('div'); el.className = 'empty-mini'; el.textContent = state.user ? 'رویدادی ثبت نشده است.' : 'پس از ورود، رویدادها نمایش داده می‌شوند.'; host.appendChild(el); return; }
-    const labels = { issue: 'صدور توکن مدیریتی', rotate: 'چرخش توکن مدیریتی', extend: 'تمدید اعتبار توکن', revoke: 'لغو توکن مدیریتی' };
-    for (const event of state.audit.slice(0, limit)) {
-      const item = document.createElement('div'); item.className = 'feed-item';
-      const badge = document.createElement('span'); badge.className = 'feed-mark'; badge.textContent = '✓';
-      const body = document.createElement('div'); const title = document.createElement('strong'); title.textContent = labels[event.action] || event.action;
-      const meta = document.createElement('p'); meta.textContent = `${event.actor_login || 'مدیر'} · ${time(event.created_at)} · شناسه ${String(event.token_id || '').slice(0, 8)}`;
-      body.append(title, meta); item.append(badge, body); host.appendChild(item);
-    }
-  }
-  function render() {
-    const counts = { active: 0, revoked: 0, expired: 0 };
-    state.tokens.forEach(t => counts[status(t)[1]]++);
-    $('activeCount').textContent = state.user ? String(counts.active) : '—';
-    $('revokedCount').textContent = state.user ? String(counts.revoked) : '—';
-    $('expiredCount').textContent = state.user ? String(counts.expired) : '—';
-    $('identity').textContent = state.user ? `@${state.user.login}` : 'ورود انجام نشده';
-    $('signInBtn').classList.toggle('hidden', Boolean(state.user));
-    $('signOutBtn').classList.toggle('hidden', !state.user);
-    $('createTokenBtn').disabled = !state.user || state.busy;
-    $('connectionStatus').textContent = state.user ? '● اتصال ایمن برقرار است' : apiBase ? '● اتصال تعریف شده' : '● در انتظار پیکربندی';
-    $('connectionStatus').classList.toggle('online', Boolean(state.user));
-    $('apiUrlText').textContent = apiBase || 'تنظیم نشده';
-    renderTokens(); renderAudit('recentAudit', 4); renderAudit('auditList', 50);
-  }
-  async function api(path, opts = {}) {
-    if (!apiBase || !state.session) throw new Error('ابتدا باید وارد شوید و اتصال API را تنظیم کنید.');
-    const res = await fetch(apiBase + path, {
-      method: opts.method || 'GET',
-      headers: { Authorization: `Bearer ${state.session}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) },
-      body: opts.body ? JSON.stringify(opts.body) : undefined,
-      cache: 'no-store', credentials: 'omit'
+  function configured() { return /^https:\/\/[^/?#]+$/.test(base); }
+  async function request(path, options = {}) {
+    if (!configured()) throw new Error('نشانی HTTPS سرویس Worker در config.js تنظیم نشده است.');
+    const token = options.token || state.token;
+    const res = await fetch(base + path, {
+      method: options.method || 'GET', mode: 'cors', cache: 'no-store', credentials: 'omit',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {})
     });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401 || res.status === 403) { signOut(false); throw new Error('نشست شما منقضی شده یا اجازهٔ دسترسی ندارید.'); }
+    if (res.status === 401 && path !== '/api/login') { signOut(); throw new Error('اعتبار توکن مدیریتی تأیید نشد. لطفاً دوباره وارد شوید.'); }
     if (!res.ok) throw new Error(data.error || `خطای سرور (${res.status})`);
     return data;
   }
+  function setScreen(loggedIn) {
+    $('loginScreen').hidden = loggedIn;
+    $('dashboard').hidden = !loggedIn;
+    $('connectionLabel').textContent = loggedIn ? 'مدیر تأیید شد' : 'در انتظار ورود مدیر';
+    document.querySelector('.status-dot').classList.toggle('on', loggedIn);
+  }
+  function clearOtp() { if (state.otpTimer) clearInterval(state.otpTimer); state.otpTimer = null; }
+  function signOut() {
+    state.token = ''; state.profile = null; state.subscribers = []; state.expiryId = ''; clearOtp();
+    $('adminToken').value = ''; $('cookieJson').value = '';
+    $('resultText').value = '';
+    document.querySelectorAll('dialog[open]').forEach(x => x.close());
+    setScreen(false);
+  }
+  function navigate(page) {
+    if (!pages[page] || !state.token) return;
+    Object.keys(pages).forEach(k => $('page-' + k).hidden = k !== page);
+    document.querySelectorAll('[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+    $('pageTitle').textContent = pages[page];
+    if (page === 'subscribers') loadSubscribers();
+    if (page === 'account') renderAccount();
+  }
+  function el(type, cls, value) { const n = document.createElement(type); if (cls) n.className = cls; if (value !== undefined) n.textContent = text(value); return n; }
+  function addButton(parent, value, handler, danger = false) {
+    const b = el('button', danger ? 'mini danger' : 'mini', value); b.type = 'button'; b.addEventListener('click', handler); parent.append(b); return b;
+  }
+  function showResult(data) {
+    const raw = (data && typeof data === 'object') ? JSON.stringify(data, null, 2) : safe(data);
+    $('resultText').value = raw; $('resultDialog').showModal();
+  }
+  function asSubscribers(data) { return Array.isArray(data?.subscribers) ? data.subscribers : Array.isArray(data) ? data : []; }
+  function idOf(s) { return text(s.subscriptionId ?? s.id); }
+  function filterSubscribers() {
+    const q = $('subscriberSearch').value.trim().toLocaleLowerCase();
+    const found = state.subscribers.filter(s => `${s.name || ''} ${s.token || ''}`.toLocaleLowerCase().includes(q));
+    const body = $('subscribersBody'); body.replaceChildren();
+    if (!found.length) { const tr = el('tr'); const cell = el('td', 'empty', 'مشترکی یافت نشد.'); cell.colSpan = 5; tr.append(cell); body.append(tr); return; }
+    for (const s of found) {
+      const tr = el('tr'); const name = el('td', '', safe(s.name || 'بدون نام')); const tok = el('td', 'table-token', safe(s.token || '—'));
+      const exp = el('td', '', formatDate(s.expiresAt));
+      const active = s.isActive !== false && (!s.expiresAt || Date.parse(s.expiresAt) > Date.now());
+      const status = el('td'); status.append(el('span', `tag ${active ? 'good' : 'bad'}`, active ? 'فعال' : 'غیرفعال / منقضی'));
+      const action = el('td'); const actions = el('div', 'row-actions'); const id = idOf(s);
+      addButton(actions, 'انقضا', () => { state.expiryId = id; $('expiryName').textContent = safe(s.name); $('expiryValue').value = s.expiresAt ? s.expiresAt.slice(0, 10) : ''; $('expiryDialog').showModal(); });
+      addButton(actions, 'حذف', async () => {
+        if (!confirm(`مشترک «${safe(s.name)}» حذف شود؟ این کار قابل بازگشت نیست.`)) return;
+        try { await request(`/api/subscribers/${encodeURIComponent(id)}`, { method: 'DELETE' }); toast('مشترک با موفقیت حذف شد.'); await loadSubscribers(); } catch (e) { toast(e.message, true); }
+      }, true);
+      action.append(actions); tr.append(name, tok, exp, status, action); body.append(tr);
+    }
+  }
+  async function loadSubscribers() {
+    if (!state.token) return;
+    try { const data = await request('/api/subscribers'); state.subscribers = asSubscribers(data); filterSubscribers(); renderOverview(); }
+    catch (e) { toast(e.message, true); }
+  }
+  function renderOverview() {
+    const account = state.profile?.account || {};
+    $('statTotal').textContent = account.totalSubscriptions ?? state.subscribers.length ?? '—';
+    $('statActive').textContent = account.activeSubscriptions ?? state.subscribers.filter(s => s.isActive).length ?? '—';
+    const agent = state.profile?.agent;
+    $('statAgent').textContent = safe(typeof agent === 'string' ? agent : (agent?.name || agent?.type || 'مدیر')).slice(0, 26);
+  }
+  function appendDetail(host, title, value) { host.append(el('dt', '', title), el('dd', '', safe(value || '—'))); }
+  function parseCredentials(account) {
+    const description = text(account?.description);
+    const match = /email:([\s\S]*?),password:([\s\S]*?),MFA:([\s\S]*)$/i.exec(description);
+    return match ? { email: match[1].trim(), password: match[2].trim(), secret: match[3].trim() } : null;
+  }
+  function base32Bytes(secret) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; const clean = secret.toUpperCase().replace(/[\s=-]/g, '');
+    let bits = 0, value = 0; const out = [];
+    for (const chr of clean) { const digit = alphabet.indexOf(chr); if (digit < 0) throw new Error('کلید MFA معتبر نیست.'); value = (value << 5) | digit; bits += 5; if (bits >= 8) { out.push((value >>> (bits -= 8)) & 255); } }
+    return new Uint8Array(out);
+  }
+  async function totp(secret) {
+    const key = await crypto.subtle.importKey('raw', base32Bytes(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+    const buffer = new ArrayBuffer(8), view = new DataView(buffer);
+    const step = Math.floor(Date.now() / 30000); view.setUint32(4, step);
+    const digest = new Uint8Array(await crypto.subtle.sign('HMAC', key, buffer));
+    const offset = digest[digest.length - 1] & 15;
+    const num = ((digest[offset] & 127) << 24) | (digest[offset + 1] << 16) | (digest[offset + 2] << 8) | digest[offset + 3];
+    return String(num % 1_000_000).padStart(6, '0');
+  }
+  function renderAccount() {
+    clearOtp(); const profile = state.profile || {}; const account = profile.account || {}; const agent = profile.agent || {};
+    const host = $('accountInfo'); host.replaceChildren();
+    appendDetail(host, 'نام', account.name || account.title);
+    appendDetail(host, 'نماینده', typeof agent === 'string' ? agent : agent.name || agent.type);
+    appendDetail(host, 'تعداد مشترک', account.totalSubscriptions);
+    appendDetail(host, 'اشتراک فعال', account.activeSubscriptions);
+    appendDetail(host, 'پیام سرور', profile.message);
+    const credentials = parseCredentials(account), holder = $('credentialBlock'); holder.replaceChildren();
+    if (!credentials) { holder.textContent = 'اطلاعات MFA در توضیحات این حساب ارائه نشده است.'; return; }
+    holder.className = '';
+    const email = el('div', 'credential-row'); email.append(el('span', '', credentials.email));
+    const pwd = el('div', 'credential-row'); const hidden = el('span', '', '••••••••'); pwd.append(hidden);
+    addButton(pwd, 'نمایش رمز', e => { const b = e.currentTarget; if (hidden.textContent === '••••••••') { hidden.textContent = credentials.password; b.textContent = 'پنهان'; } else { hidden.textContent = '••••••••'; b.textContent = 'نمایش رمز'; } });
+    const code = el('div', 'mfa-code', '------'); const remaining = el('p', 'muted', '');
+    holder.append(el('p', 'muted', 'ایمیل حساب'), email, el('p', 'muted', 'رمز عبور'), pwd, el('p', 'muted', 'رمز یکبارمصرف'), code, remaining);
+    async function tick() {
+      if (!state.token) return;
+      try { code.textContent = await totp(credentials.secret); remaining.textContent = `اعتبار تا تغییر کد: ${30 - (Math.floor(Date.now() / 1000) % 30)} ثانیه`; }
+      catch { code.textContent = 'نامعتبر'; remaining.textContent = 'کلید MFA ارائه‌شده قابل استفاده نیست.'; clearOtp(); }
+    }
+    tick(); state.otpTimer = setInterval(tick, 1000);
+  }
+  async function loadCookies() {
+    try {
+      const data = await request('/api/cookies/status'); const out = $('cookiesStatus'); out.replaceChildren();
+      // Only show non-sensitive status keys. Never dump session cookies or credentials.
+      const allowed = ['message', 'status', 'success', 'remaining', 'remainingDays', 'expiresAt', 'updatedAt', 'cookieType'];
+      const items = allowed.filter(k => data && data[k] != null).map(k => `${k}: ${safe(data[k])}`);
+      out.textContent = items.join('\n') || 'پاسخ سرور دریافت شد؛ جزئیات محرمانهٔ کوکی‌ها مخفی هستند.';
+      toast('وضعیت کوکی‌ها دریافت شد.');
+    } catch (e) { toast(e.message, true); }
+  }
+  async function loadProxies() {
+    try {
+      const data = await request('/api/proxies');
+      const list = Array.isArray(data) ? data : Array.isArray(data?.proxies) ? data.proxies : [];
+      const host = $('proxyList'); host.replaceChildren();
+      if (!list.length) { host.append(el('div', 'empty-mini', 'پروکسی قابل نمایش یافت نشد.')); return; }
+      for (const [i, proxy] of list.entries()) {
+        const item = el('article', 'proxy-card');
+        item.append(el('b', '', safe(proxy.name || proxy.NAME || `پروکسی ${i + 1}`)));
+        item.append(el('p', '', safe(proxy.PROXY_HOST || proxy.host || proxy.PROXY_SERVER || 'نشانی نامشخص')));
+        host.append(item);
+      }
+    } catch (e) { toast(e.message, true); }
+  }
   async function refresh() {
-    if (!state.session) return;
+    if (!state.token) return;
+    try { const data = await request('/api/account'); state.profile = data.profile; renderOverview(); await loadSubscribers(); }
+    catch (e) { toast(e.message, true); }
+  }
+  async function login(e) {
+    e.preventDefault(); if (state.busy) return;
+    const token = $('adminToken').value.trim();
+    $('loginError').hidden = true;
+    if (!token.startsWith('@') || token.length < 2) { $('loginError').textContent = 'تنها توکن مدیر که با @ آغاز می‌شود پذیرفته است.'; $('loginError').hidden = false; return; }
+    state.busy = true; $('loginBtn').disabled = true;
     try {
-      const [tokens, audit] = await Promise.all([api('/api/admin-tokens'), api('/api/audit')]);
-      state.tokens = Array.isArray(tokens.tokens) ? tokens.tokens : [];
-      state.audit = Array.isArray(audit.events) ? audit.events : [];
-      render();
-    } catch (e) { toast(e.message, true); }
+      const data = await request('/api/login', { method: 'POST', body: { token }, token: '' });
+      state.token = token; state.profile = data.profile;
+      $('adminToken').value = ''; setScreen(true); renderOverview(); navigate('overview');
+      await loadSubscribers(); toast('ورود مدیریتی تأیید شد.');
+    } catch (error) { $('loginError').textContent = error.message; $('loginError').hidden = false; }
+    finally { state.busy = false; $('loginBtn').disabled = false; }
   }
-  function signOut(callServer = true) {
-    const old = state.session; state.session = ''; state.user = null; state.tokens = []; state.audit = []; render();
-    if (callServer && old && apiBase) fetch(apiBase + '/api/logout', { method: 'POST', headers: { Authorization: `Bearer ${old}` }, credentials: 'omit' }).catch(() => {});
+  document.querySelectorAll('[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
+  document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => $(b.dataset.close).close()));
+  $('loginForm').addEventListener('submit', login);
+  $('toggleToken').addEventListener('click', () => { const input = $('adminToken'); input.type = input.type === 'password' ? 'text' : 'password'; $('toggleToken').textContent = input.type === 'password' ? 'نمایش' : 'پنهان'; });
+  $('logoutBtn').addEventListener('click', signOut);
+  $('refreshBtn').addEventListener('click', refresh);
+  $('reloadSubscribers').addEventListener('click', loadSubscribers);
+  $('subscriberSearch').addEventListener('input', filterSubscribers);
+  $('newSubscriberBtn').addEventListener('click', () => $('subscriberDialog').showModal());
+  $('subscriberForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    try { const data = await request('/api/subscribers', { method: 'POST', body: { name: $('newName').value.trim(), ...(isoDate($('newExpiry').value) ? { expiresAt: isoDate($('newExpiry').value) } : {}) } }); $('subscriberDialog').close(); $('subscriberForm').reset(); showResult(data); await loadSubscribers(); }
+    catch (e) { toast(e.message, true); }
+  });
+  $('expiryForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    try { await request(`/api/subscribers/${encodeURIComponent(state.expiryId)}`, { method: 'PATCH', body: { expiresAt: isoDate($('expiryValue').value) } }); $('expiryDialog').close(); toast('تاریخ انقضا تغییر کرد.'); await loadSubscribers(); }
+    catch (e) { toast(e.message, true); }
+  });
+  $('copyResult').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('resultText').value); toast('نتیجه کپی شد.'); } catch { toast('کپی خودکار ممکن نیست.', true); } });
+  $('reloadCookies').addEventListener('click', loadCookies);
+  $('deleteCookies').addEventListener('click', async () => {
+    if (!confirm('همهٔ کوکی‌های حساب از سرور حذف شوند؟ این عملیات قابل بازگشت نیست.')) return;
+    try { const out = await request('/api/cookies', { method: 'DELETE' }); toast(safe(out.message || 'کوکی‌ها حذف شدند.')); await loadCookies(); } catch (e) { toast(e.message, true); }
+  });
+  $('cookieForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!confirm('کوکی‌های واردشده به سرویس GPT Yar ارسال شوند؟')) return;
+    try { const cookies = JSON.parse($('cookieJson').value); const data = await request('/api/cookies', { method: 'POST', body: { cookie_type: $('cookieAgent').value, cookies } }); $('cookieJson').value = ''; toast(safe(data.message || 'کوکی‌ها بروزرسانی شدند.')); await loadCookies(); }
+    catch (e) { toast('ورودی یا ارسال کوکی نامعتبر است: ' + e.message, true); }
+  });
+  $('reloadProxies').addEventListener('click', loadProxies);
+  if (!configured()) {
+    $('loginError').textContent = 'قبل از ورود، Worker را منتشر کنید و آدرس HTTPS آن را در config.js قرار دهید.';
+    $('loginError').hidden = false;
   }
-  function getSessionFromFragment() {
-    const hash = new URLSearchParams(location.hash.slice(1));
-    const session = hash.get('session'); const problem = hash.get('error');
-    if (session || problem) history.replaceState(null, '', location.pathname + location.search);
-    if (problem) toast(problem === 'access_denied' ? 'این حساب در فهرست مدیران مجاز نیست.' : 'احراز هویت ناموفق بود.', true);
-    if (session && /^[A-Za-z0-9_-]{35,}$/.test(session)) state.session = session;
-  }
-  async function initAuth() {
-    if (!state.session) return;
-    try { const result = await api('/api/me'); state.user = result.user; notice(''); render(); await refresh(); }
-    catch (e) { signOut(false); toast(e.message, true); }
-  }
-  function showSecret(value) { $('secretValue').value = value; $('secretDialog').showModal(); }
-  function openAction(action, token) {
-    if (!state.user || status(token)[1] !== 'active') return;
-    state.action = { action, token };
-    const labels = { revoke: ['لغو توکن', 'پس از لغو، توکن دیگر معتبر نخواهد بود. این عملیات قابل بازگشت نیست.'], rotate: ['چرخش توکن', 'توکن فعلی باطل می‌شود و مقدار جدید فقط یک بار نمایش داده خواهد شد.'], extend: ['تمدید توکن', 'به مدت اعتبار توکن مدیریتی افزوده می‌شود.'] };
-    $('actionTitle').textContent = labels[action][0]; $('actionDescription').textContent = `${labels[action][1]}\nعنوان: ${token.label}`;
-    $('extendFields').classList.toggle('hidden', action !== 'extend'); $('confirmActionBtn').className = `button ${action === 'revoke' ? 'danger' : 'primary'}`;
-    $('actionDialog').showModal();
-  }
-  async function runMutation(path, payload) {
-    if (state.busy) return;
-    state.busy = true; render();
-    try {
-      const result = await api(path, { method: 'POST', body: payload || {} });
-      document.querySelectorAll('dialog[open]').forEach(d => d.close());
-      if (result.token) showSecret(result.token);
-      await refresh(); toast('عملیات مدیریتی با موفقیت انجام شد.');
-    } catch (e) { toast(e.message, true); }
-    finally { state.busy = false; render(); }
-  }
-  function wire() {
-    document.querySelectorAll('[data-page]').forEach(el => el.addEventListener('click', () => goto(el.dataset.page)));
-    document.querySelectorAll('[data-goto]').forEach(el => el.addEventListener('click', () => goto(el.dataset.goto)));
-    document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', () => $(el.dataset.close).close()));
-    $('signInBtn').addEventListener('click', () => {
-      if (!apiBase || !/^https:\/\//.test(apiBase)) { goto('settings'); toast('ابتدا نشانی HTTPS سرویس API را در فایل config.js تنظیم کنید.', true); return; }
-      window.location.assign(apiBase + '/auth/start');
-    });
-    $('signOutBtn').addEventListener('click', () => signOut());
-    $('createTokenBtn').addEventListener('click', () => $('createDialog').showModal());
-    $('refreshBtn').addEventListener('click', refresh);
-    $('auditRefreshBtn').addEventListener('click', refresh);
-    $('createForm').addEventListener('submit', e => {
-      e.preventDefault(); const form = e.currentTarget;
-      runMutation('/api/admin-tokens', { label: $('tokenLabel').value.trim(), days: Number($('tokenDays').value) }); form.reset();
-    });
-    $('confirmActionBtn').addEventListener('click', () => {
-      if (!state.action) return;
-      const { action, token } = state.action;
-      runMutation(`/api/admin-tokens/${encodeURIComponent(token.id)}/${action}`, action === 'extend' ? { days: Number($('extendDays').value) } : {});
-      state.action = null;
-    });
-    $('copySecretBtn').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('secretValue').value); toast('توکن کپی شد.'); } catch { toast('کپی خودکار ممکن نبود؛ مقدار را دستی کپی کنید.', true); } });
-    $('secretDialog').addEventListener('close', () => { $('secretValue').value = ''; });
-  }
-  wire(); getSessionFromFragment(); render();
-  if (!apiBase) notice('برای فعال‌شدن عملیات واقعی، ابتدا Cloudflare Worker را راه‌اندازی کرده و نشانی آن را در config.js قرار دهید.');
-  initAuth();
+  setScreen(false);
 })();
